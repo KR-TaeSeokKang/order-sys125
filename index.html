@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>매장 통합 주문 및 픽업 관리자 시스템</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js CDN -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Google Fonts Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f8fafc;
+            color: #334155;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px 12px;
+            font-size: 12px;
+            background: rgba(15, 23, 42, 0.95);
+            color: #fff;
+            border-radius: 8px;
+            pointer-events: none;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 60;
+        }
+        
+        .touch-btn {
+            min-height: 38px;
+        }
+
+        /* 픽업 전광판 점멸 애니메이션 */
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 15px rgba(239, 68, 68, 0.6), inset 0 0 10px rgba(239, 68, 68, 0.3);
+                border-color: #ef4444;
+            }
+            50% {
+                box-shadow: 0 0 35px rgba(245, 158, 11, 0.9), inset 0 0 20px rgba(245, 158, 11, 0.5);
+                border-color: #f59e0b;
+            }
+        }
+
+        .pickup-blink {
+            animation: pulse-glow 1.2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex flex-col md:flex-row justify-between items-center gap-3">
+            <div class="flex items-center space-x-2.5 w-full md:w-auto justify-between md:justify-start">
+                <div class="flex items-center space-x-2.5">
+                    <span class="bg-indigo-600 text-white p-2 rounded-xl text-lg sm:text-xl font-bold shadow">🍽</span>
+                    <div>
+                        <h1 class="text-base sm:text-lg font-bold tracking-tight leading-tight">매장 통합 주문 관리자</h1>
+                        <p class="text-[11px] sm:text-xs text-slate-400">실시간 빌지, 픽업 전광판 & 매출 통합 제어</p>
+                    </div>
+                </div>
+                <div class="md:hidden flex items-center">
+                    <span class="inline-block w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping mr-1.5"></span>
+                    <span class="text-[10px] text-slate-300 font-medium">LIVE</span>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="flex bg-slate-800 p-1 rounded-xl space-x-1 shadow-inner overflow-x-auto w-full md:w-auto no-scrollbar scroll-smooth">
+                <button onclick="switchTab('menu')" id="btn-tab-menu" class="px-3 py-2 text-xs font-medium rounded-lg transition-all bg-indigo-600 text-white shadow whitespace-nowrap flex-1 sm:flex-none text-center">
+                    📋 메뉴 관리
+                </button>
+                <button onclick="switchTab('kitchen')" id="btn-tab-kitchen" class="px-3 py-2 text-xs font-medium rounded-lg transition-all text-slate-300 hover:text-white hover:bg-slate-700 whitespace-nowrap flex-1 sm:flex-none text-center">
+                    👨‍🍳 주방 빌지 (FIFO)
+                </button>
+                <button onclick="switchTab('table')" id="btn-tab-table" class="px-3 py-2 text-xs font-medium rounded-lg transition-all text-slate-300 hover:text-white hover:bg-slate-700 whitespace-nowrap flex-1 sm:flex-none text-center">
+                    🪑 테이블 관리
+                </button>
+                <button onclick="switchTab('pickup')" id="btn-tab-pickup" class="px-3 py-2 text-xs font-medium rounded-lg transition-all text-slate-300 hover:text-white hover:bg-slate-700 whitespace-nowrap flex-1 sm:flex-none text-center">
+                    🔔 픽업 전광판
+                </button>
+                <button onclick="switchTab('sales')" id="btn-tab-sales" class="px-3 py-2 text-xs font-medium rounded-lg transition-all text-slate-300 hover:text-white hover:bg-slate-700 whitespace-nowrap flex-1 sm:flex-none text-center">
+                    📊 매출 분석
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+
+        <section id="tab-menu" class="space-y-4 sm:space-y-6">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-sm sm:text-base font-bold text-slate-800 mb-1">신규 메뉴 등록</h2>
+                <p class="text-xs text-slate-500 mb-4">새로운 메뉴 항목과 카테고리, 가격을 입력하여 추가합니다.</p>
+                
+                <form id="menu-form" onsubmit="handleAddMenu(event)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 items-end">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">메뉴 이름</label>
+                        <input type="text" id="menu-name" required placeholder="예: 시그니처 스테이크" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">카테고리</label>
+                        <select id="menu-category" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm bg-white">
+                            <option value="메인요리">메인요리</option>
+                            <option value="서브요리">서브요리</option>
+                            <option value="주류/음료">주류/음료</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">가격 (원)</label>
+                        <input type="number" id="menu-price" required min="0" step="100" placeholder="예: 25000" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm">
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium py-2.5 px-4 rounded-xl text-sm transition shadow-sm touch-btn flex items-center justify-center">
+                            + 메뉴 추가하기
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Registered Menu List Table -->
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-bold text-slate-800">등록된 메뉴 목록</h3>
+                    <span class="text-xs text-slate-400">개별 메뉴 삭제 가능</span>
+                </div>
+                <div class="overflow-x-auto -mx-4 sm:mx-0">
+                    <div class="inline-block min-w-full align-middle px-4 sm:px-0">
+                        <table class="min-w-full text-left border-collapse text-xs sm:text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 text-slate-500 bg-slate-50">
+                                    <th class="py-2.5 px-3 font-medium rounded-l-xl">메뉴명</th>
+                                    <th class="py-2.5 px-3 font-medium">카테고리</th>
+                                    <th class="py-2.5 px-3 font-medium">가격</th>
+                                    <th class="py-2.5 px-3 font-medium rounded-r-xl text-right">관리</th>
+                                </tr>
+                            </thead>
+                            <tbody id="menu-table-body" class="divide-y divide-slate-100">
+                                <!-- JS Render -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-kitchen" class="hidden space-y-4 sm:space-y-6">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
+                <div>
+                    <h2 class="text-sm sm:text-base font-bold text-slate-800 mb-0.5">👨‍🍳 실시간 주방 빌지 디스플레이 (FIFO 선입선출)</h2>
+                    <p class="text-xs text-slate-500">주문 시각(Timestamp)을 기준으로 가장 먼저 도착한 대기 주문이 상단에 표출됩니다.</p>
+                </div>
+                <div class="text-right hidden sm:block">
+                    <span class="inline-block w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping mr-1"></span>
+                    <span class="text-xs font-semibold text-slate-600">선입선출 정렬 중</span>
+                </div>
+            </div>
+
+            <div id="kitchen-queue-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <!-- JS Dynamic Render -->
+            </div>
+        </section>
+
+        <section id="tab-table" class="hidden space-y-4 sm:space-y-6">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div>
+                    <h2 class="text-sm sm:text-base font-bold text-slate-800 mb-0.5">테이블 관리 및 주문 제어</h2>
+                    <p class="text-xs text-slate-500">구역(H홀 - 오렌지 / T데크 - 블루) 선택, 합석 제어, 수동/자동 픽업 대기 전환, 퇴장 및 강제 비우기를 지원합니다.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+                    <input type="text" id="new-table-name" placeholder="테이블 번호 (예: H-1)" class="px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm w-full sm:w-36">
+                    <select id="new-table-zone" class="px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white w-full sm:w-auto font-medium">
+                        <option value="H">🍊 H홀 (웜 오렌지)</option>
+                        <option value="T">🟦 T데크 (쿨 블루)</option>
+                    </select>
+                    <button onclick="handleAddTable()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-xl text-sm transition shadow-sm whitespace-nowrap touch-btn">
+                        + 테이블 생성
+                    </button>
+                </div>
+            </div>
+
+            <!-- Merge Control Bar -->
+            <div class="bg-indigo-50 border border-indigo-100 p-3.5 sm:p-4 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div class="flex items-center space-x-2">
+                    <span class="text-indigo-600 text-base sm:text-lg">🔗</span>
+                    <div>
+                        <h4 class="text-xs sm:text-xs font-bold text-indigo-900">테이블 합석 그룹 관리</h4>
+                        <p class="text-[11px] sm:text-xs text-indigo-600">체크한 테이블들의 주문 내역과 합계를 그룹으로 통합합니다.</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 w-full md:w-auto">
+                    <input type="text" id="group-name-input" placeholder="그룹명 (예: 단체A)" class="px-3 py-1.5 border border-indigo-200 rounded-xl text-xs bg-white flex-1 md:w-32">
+                    <button onclick="handleMergeTables()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-xl transition shadow-sm whitespace-nowrap">
+                        합석 적용
+                    </button>
+                    <button onclick="handleUnmergeTables()" class="px-3 py-2 bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-medium rounded-xl transition whitespace-nowrap">
+                        합석 해제
+                    </button>
+                </div>
+            </div>
+
+            <!-- Zone Filter Buttons -->
+            <div class="flex bg-slate-200 p-1 rounded-xl w-full sm:w-fit space-x-1 overflow-x-auto no-scrollbar">
+                <button onclick="setZoneFilter('ALL')" id="btn-zone-ALL" class="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition bg-white text-indigo-600 shadow-sm whitespace-nowrap">
+                    전체 구역
+                </button>
+                <button onclick="setZoneFilter('H')" id="btn-zone-H" class="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition text-amber-700 hover:bg-amber-100 whitespace-nowrap">
+                    🍊 H홀 (웜 오렌지)
+                </button>
+                <button onclick="setZoneFilter('T')" id="btn-zone-T" class="flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition text-blue-700 hover:bg-blue-100 whitespace-nowrap">
+                    🟦 T데크 (쿨 블루)
+                </button>
+            </div>
+
+            <!-- Table Layout Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                <!-- Left: Table Cards Grid -->
+                <div class="lg:col-span-1 space-y-3">
+                    <div class="flex justify-between items-center px-1">
+                        <h3 class="text-xs sm:text-sm font-bold text-slate-800">테이블 목록</h3>
+                        <span class="text-[11px] text-slate-400">터치 시 상세 조회</span>
+                    </div>
+                    <div id="table-grid-container" class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-1 gap-2.5 max-h-[350px] lg:max-h-[600px] overflow-y-auto pr-0.5">
+                        <!-- Dynamic Render -->
+                    </div>
+                </div>
+
+                <!-- Right: Selected Table Detailed View -->
+                <div class="lg:col-span-2 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                    <div id="table-detail-panel">
+                        <div class="text-center py-16 sm:py-24 text-slate-400">
+                            <span class="text-3xl sm:text-4xl block mb-2">🛎️</span>
+                            <p class="text-xs sm:text-sm font-medium">관리할 테이블을 선택해주세요.</p>
+                            <p class="text-[11px] sm:text-xs text-slate-400 mt-1">체크박스 선택 후 픽업 및 완료(종료) 처리가 가능합니다.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-pickup" class="hidden space-y-6">
+            <div class="bg-slate-900 text-white p-6 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <span class="text-3xl animate-bounce">📢</span>
+                    <div>
+                        <h2 class="text-lg sm:text-2xl font-black text-amber-400 tracking-wider uppercase">PICKUP BOARD</h2>
+                        <p class="text-xs sm:text-sm text-slate-300">픽업 준비(PICKUP)된 메뉴만 표출되며, 수동으로 완료 처리할 수 있습니다.</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button onclick="toggleCompletedPickupsView()" id="btn-toggle-completed" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition flex items-center gap-1.5">
+                        👁️ 종료 목록 가리기
+                    </button>
+                    <span class="text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-full">실시간 연동중</span>
+                </div>
+            </div>
+
+            <!-- Active Pickup Ready Queue -->
+            <div class="space-y-3">
+                <div class="flex justify-between items-center px-1">
+                    <h3 class="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
+                        🔥 픽업 대기 중 (전광판 표출)
+                        <span id="ready-pickup-count-badge" class="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+                    </h3>
+                </div>
+                
+                <div id="ready-pickup-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Dynamic Render -->
+                </div>
+            </div>
+
+            <!-- Completed Pickup History (Collapsible) -->
+            <div id="completed-pickups-section" class="space-y-3 pt-6 border-t border-slate-200">
+                <div class="flex justify-between items-center px-1">
+                    <h3 class="text-sm font-bold text-slate-600 flex items-center gap-2">
+                        ✅ 최근 종료(완료)된 주문 내역
+                        <span id="completed-pickup-count-badge" class="bg-slate-200 text-slate-700 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+                    </h3>
+                </div>
+                
+                <div id="completed-pickup-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    <!-- Dynamic Render -->
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-sales" class="hidden space-y-4 sm:space-y-6">
+            <!-- Stat KPI Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center space-x-3.5">
+                    <div class="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl text-xl sm:text-2xl">💰</div>
+                    <div>
+                        <p class="text-[11px] sm:text-xs text-slate-500 font-medium">총 누적 매출액</p>
+                        <h3 id="stat-total-revenue" class="text-base sm:text-xl font-bold text-slate-800 mt-0.5">0 원</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center space-x-3.5">
+                    <div class="p-2.5 bg-emerald-50 text-emerald-600 rounded-2xl text-xl sm:text-2xl">📦</div>
+                    <div>
+                        <p class="text-[11px] sm:text-xs text-slate-500 font-medium">총 판매 수량</p>
+                        <h3 id="stat-total-qty" class="text-base sm:text-xl font-bold text-slate-800 mt-0.5">0 개</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center space-x-3.5">
+                    <div class="p-2.5 bg-amber-50 text-amber-600 rounded-2xl text-xl sm:text-2xl">🪑</div>
+                    <div>
+                        <p class="text-[11px] sm:text-xs text-slate-500 font-medium">현재 이용 중 테이블</p>
+                        <h3 id="stat-active-tables" class="text-base sm:text-xl font-bold text-slate-800 mt-0.5">0 개</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart Visualization Card -->
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-2">
+                    <div>
+                        <h2 class="text-sm sm:text-base font-bold text-slate-800">카테고리별 누적 매출 및 판매 분석</h2>
+                        <p class="text-xs text-slate-500">현재 영업 중 주문 건과 손님 퇴장 결제 내역 합계입니다.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs w-full sm:w-auto justify-between sm:justify-end">
+                        <button onclick="renderSalesChart()" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition text-xs">
+                            🔄 차트 새로고침
+                        </button>
+                        <button onclick="handleResetAccumulatedSales()" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-lg transition text-xs border border-rose-200">
+                            🗑️ 누적 매출 초기화
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="chart-container" class="w-full h-64 sm:h-80 flex items-center justify-center relative overflow-hidden">
+                    <!-- D3 Chart inserted here -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal Notification Component -->
+    <div id="custom-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white p-5 sm:p-6 rounded-2xl max-w-xs sm:max-w-sm w-full shadow-xl text-center">
+            <h3 id="modal-title" class="text-sm sm:text-base font-bold text-slate-800 mb-2">알림</h3>
+            <p id="modal-message" class="text-xs text-slate-600 mb-5 leading-relaxed">메시지 내용</p>
+            <button onclick="closeModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-xl text-xs transition touch-btn">
+                확인
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB6V3SQ0d6mWJFESNHfWImZzBLqwyuelaM",
+            authDomain: "order-4534d.firebaseapp.com",
+            projectId: "order-4534d",
+            storageBucket: "order-4534d.firebasestorage.app",
+            messagingSenderId: "670820395207",
+            appId: "1:670820395207:web:13e07c48a753e1a84fb6e2",
+            measurementId: "G-DVRGTYWR5S"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const docRef = doc(db, "restaurant", "unified_state");
+
+        // Application Global State
+        // itemStatuses: ['PENDING'(대기), 'PICKUP'(픽업대기), 'COMPLETED'(종료)]
+        window.state = {
+            menus: [
+                { id: 'm1', name: '시그니처 스테이크', category: '메인요리', price: 28000 },
+                { id: 'm2', name: '트러플 크림 파스타', category: '메인요리', price: 16000 },
+                { id: 'm3', name: '가든 샐러드', category: '서브요리', price: 9000 },
+                { id: 'm4', name: '프렌치 프라이', category: '서브요리', price: 6500 },
+                { id: 'm5', name: '수제 하이볼', category: '주류/음료', price: 8000 },
+                { id: 'm6', name: '탄산음료', category: '주류/음료', price: 3000 }
+            ],
+            tables: [
+                { 
+                    id: 't1', 
+                    name: 'H-1번 테이블', 
+                    zone: 'H', 
+                    status: '이용', 
+                    groupId: null,
+                    pickupStatus: 'NONE', 
+                    orders: [
+                        { orderId: 'o1', menuId: 'm1', menuName: '시그니처 스테이크', category: '메인요리', price: 28000, qty: 2, itemStatuses: ['PENDING', 'PENDING'], orderTime: '18:20', timestamp: 1710000000000 },
+                        { orderId: 'o2', menuId: 'm5', menuName: '수제 하이볼', category: '주류/음료', price: 8000, qty: 1, itemStatuses: ['PICKUP'], orderTime: '18:22', timestamp: 1710000120000 }
+                    ] 
+                },
+                { 
+                    id: 't2', 
+                    name: 'T-1번 테이블', 
+                    zone: 'T', 
+                    status: '이용', 
+                    groupId: null,
+                    pickupStatus: 'WAITING',
+                    orders: [
+                        { orderId: 'o3', menuId: 'm2', menuName: '트러플 크림 파스타', category: '메인요리', price: 16000, qty: 1, itemStatuses: ['PICKUP'], orderTime: '18:25', timestamp: 1710000300000 }
+                    ] 
+                },
+                { id: 't3', name: 'H-2번 테이블', zone: 'H', status: '비이용', groupId: null, pickupStatus: 'NONE', orders: [] }
+            ],
+            accumulatedSales: [], 
+            selectedTableId: 't1',
+            selectedTableIdsForMerge: [],
+            selectedZoneFilter: 'ALL',
+            selectedCategoryFilter: 'ALL',
+            hideCompletedPickups: false,
+            checkedItems: {} // Key: `${tableId}_${orderId}_${index}` -> boolean
+        };
+
+        // Web Audio API 기반 "띵동" 2음 차임벨 소리를 5번 연속 재생하는 알림 함수
+        window.playPickupSound = function() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+
+                const repeatCount = 5;
+                const interval = 0.65; // 각 "띵동" 소리 간격 (초)
+
+                for (let i = 0; i < repeatCount; i++) {
+                    const startTime = ctx.currentTime + (i * interval);
+
+                    // 1번째 음: "띵" (E5, 659.25Hz)
+                    const osc1 = ctx.createOscillator();
+                    const gain1 = ctx.createGain();
+                    osc1.type = 'sine';
+                    osc1.frequency.setValueAtTime(659.25, startTime);
+                    gain1.gain.setValueAtTime(0.3, startTime);
+                    gain1.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+                    osc1.connect(gain1);
+                    gain1.connect(ctx.destination);
+                    osc1.start(startTime);
+                    osc1.stop(startTime + 0.4);
+
+                    // 2번째 음: "동" (C5, 523.25Hz, 0.15초 후)
+                    const osc2 = ctx.createOscillator();
+                    const gain2 = ctx.createGain();
+                    osc2.type = 'sine';
+                    osc2.frequency.setValueAtTime(523.25, startTime + 0.15);
+                    gain2.gain.setValueAtTime(0.3, startTime + 0.15);
+                    gain2.gain.exponentialRampToValueAtTime(0.001, startTime + 0.6);
+                    osc2.connect(gain2);
+                    gain2.connect(ctx.destination);
+                    osc2.start(startTime + 0.15);
+                    osc2.stop(startTime + 0.6);
+                }
+            } catch (e) {
+                console.log("오디오 재생 실패 또는 제약 조건:", e);
+            }
+        };
+
+        // 데이터 하위 호환성 정제
+        function sanitizeData(tables) {
+            tables.forEach(table => {
+                if (table.orders) {
+                    table.orders.forEach(order => {
+                        if (!order.itemStatuses) {
+                            if (order.readyQtys && Array.isArray(order.readyQtys)) {
+                                order.itemStatuses = order.readyQtys.map(r => r ? 'PICKUP' : 'PENDING');
+                            } else {
+                                order.itemStatuses = Array(order.qty || 1).fill('PENDING');
+                            }
+                        }
+                    });
+                }
+            });
+            return tables;
+        }
+
+        window.saveToStorage = async function() {
+            try {
+                await setDoc(docRef, {
+                    menus: state.menus,
+                    tables: state.tables,
+                    accumulatedSales: state.accumulatedSales || []
+                });
+            } catch (e) {
+                console.error("Firebase DB 저장 오류:", e);
+            }
+        };
+
+        let previousPickupCount = -1;
+
+        onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const fetchedData = docSnap.data();
+                state.menus = fetchedData.menus || [];
+                state.tables = sanitizeData(fetchedData.tables || []);
+                state.accumulatedSales = fetchedData.accumulatedSales || [];
+                
+                // 총 픽업대기(PICKUP) 항목 개수 실시간 감지
+                let currentPickupItemCount = 0;
+                state.tables.forEach(t => {
+                    t.orders.forEach(o => {
+                        (o.itemStatuses || []).forEach(s => {
+                            if (s === 'PICKUP') currentPickupItemCount++;
+                        });
+                    });
+                });
+
+                // 새로운 픽업대기 항목이 생성되면 "띵동" 소리 알림 5회 재생
+                if (previousPickupCount !== -1 && currentPickupItemCount > previousPickupCount) {
+                    playPickupSound();
+                }
+                previousPickupCount = currentPickupItemCount;
+
+                renderMenus();
+                renderTables();
+                renderKitchenQueue();
+                renderPickupBoard();
+                if (!document.getElementById('tab-sales').classList.contains('hidden')) {
+                    renderSalesChart();
+                }
+            } else {
+                saveToStorage();
+            }
+        });
+
+        window.showMessage = function(title, message) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-message').innerText = message;
+            document.getElementById('custom-modal').classList.remove('hidden');
+        };
+
+        window.closeModal = function() {
+            document.getElementById('custom-modal').classList.add('hidden');
+        };
+
+        window.switchTab = function(tabKey) {
+            ['menu', 'kitchen', 'table', 'pickup', 'sales'].forEach(t => {
+                const sec = document.getElementById(`tab-${t}`);
+                const btn = document.getElementById(`btn-tab-${t}`);
+                if (t === tabKey) {
+                    sec.classList.remove('hidden');
+                    btn.className = "px-3 py-2 text-xs font-medium rounded-lg transition-all bg-indigo-600 text-white shadow whitespace-nowrap flex-1 sm:flex-none text-center";
+                } else {
+                    sec.classList.add('hidden');
+                    btn.className = "px-3 py-2 text-xs font-medium rounded-lg transition-all text-slate-300 hover:text-white hover:bg-slate-700 whitespace-nowrap flex-1 sm:flex-none text-center";
+                }
+            });
+
+            if (tabKey === 'kitchen') renderKitchenQueue();
+            else if (tabKey === 'pickup') renderPickupBoard();
+            else if (tabKey === 'sales') {
+                updateSalesStats();
+                renderSalesChart();
+            }
+        };
+
+        window.handleAddMenu = function(e) {
+            e.preventDefault();
+            const nameInput = document.getElementById('menu-name');
+            const categoryInput = document.getElementById('menu-category');
+            const priceInput = document.getElementById('menu-price');
+
+            const newMenu = {
+                id: 'm_' + Date.now(),
+                name: nameInput.value.trim(),
+                category: categoryInput.value,
+                price: Number(priceInput.value)
+            };
+
+            state.menus.push(newMenu);
+            saveToStorage();
+            nameInput.value = '';
+            priceInput.value = '';
+            showMessage('등록 완료', '새 메뉴가 추가되었습니다.');
+        };
+
+        window.handleDeleteMenu = function(menuId) {
+            if (confirm('해당 메뉴를 삭제하시겠습니까?')) {
+                state.menus = state.menus.filter(m => m.id !== menuId);
+                saveToStorage();
+                showMessage('삭제 완료', '메뉴가 삭제되었습니다.');
+            }
+        };
+
+        window.renderMenus = function() {
+            const tbody = document.getElementById('menu-table-body');
+            tbody.innerHTML = '';
+
+            if (state.menus.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-400 text-xs">등록된 메뉴가 없습니다.</td></tr>`;
+                return;
+            }
+
+            state.menus.forEach(menu => {
+                const badgeColor = menu.category === '메인요리' ? 'bg-indigo-50 text-indigo-700' : menu.category === '서브요리' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition text-xs sm:text-sm";
+                tr.innerHTML = `
+                    <td class="py-2.5 px-3 font-medium text-slate-800">${menu.name}</td>
+                    <td class="py-2.5 px-3"><span class="px-2 py-0.5 ${badgeColor} text-[11px] rounded-full font-medium whitespace-nowrap">${menu.category}</span></td>
+                    <td class="py-2.5 px-3 font-semibold text-slate-800 whitespace-nowrap">${menu.price.toLocaleString()} 원</td>
+                    <td class="py-2.5 px-3 text-right">
+                        <button onclick="handleDeleteMenu('${menu.id}')" class="text-rose-500 hover:text-rose-700 text-xs px-2 py-1 bg-rose-50 hover:bg-rose-100 rounded-lg transition font-medium whitespace-nowrap border border-rose-200">🗑️ 삭제</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        };
+
+        // 주방 빌지: 대기(PENDING) 항목만 보여주고 [✓ 픽업대기] 버튼 제공
+        window.renderKitchenQueue = function() {
+            const container = document.getElementById('kitchen-queue-container');
+            container.innerHTML = '';
+
+            if (state.menus.length === 0) {
+                container.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400 text-xs">등록된 메뉴가 없습니다.</div>`;
+                return;
+            }
+
+            state.menus.forEach(menu => {
+                let queueItems = [];
+
+                state.tables.forEach(table => {
+                    table.orders.forEach(order => {
+                        if (order.menuId === menu.id) {
+                            const pendingIndices = [];
+                            (order.itemStatuses || []).forEach((status, idx) => {
+                                if (status === 'PENDING') pendingIndices.push(idx);
+                            });
+
+                            if (pendingIndices.length > 0) {
+                                queueItems.push({
+                                    tableId: table.id,
+                                    tableName: table.name,
+                                    zone: table.zone,
+                                    orderId: order.orderId,
+                                    pendingCount: pendingIndices.length,
+                                    totalQty: order.qty,
+                                    firstPendingIdx: pendingIndices[0],
+                                    orderTime: order.orderTime || '방금',
+                                    timestamp: order.timestamp || 0
+                                });
+                            }
+                        }
+                    });
+                });
+
+                // FIFO Sort by Timestamp
+                queueItems.sort((a, b) => a.timestamp - b.timestamp);
+
+                const menuCard = document.createElement('div');
+                menuCard.className = "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col";
+                const categoryBadge = menu.category === '메인요리' ? 'bg-indigo-600' : menu.category === '서브요리' ? 'bg-emerald-600' : 'bg-amber-500';
+
+                let itemsHtml = '';
+                if (queueItems.length === 0) {
+                    itemsHtml = `<div class="p-6 text-center text-xs text-slate-400">🎉 현재 대기 항목이 없습니다.</div>`;
+                } else {
+                    itemsHtml = queueItems.map((item, idx) => {
+                        let zoneBadgeClass = item.zone === 'H' 
+                            ? 'bg-amber-500 text-white font-black border-amber-600' 
+                            : 'bg-blue-600 text-white font-black border-blue-700';
+
+                        return `
+                            <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2 transition hover:bg-white hover:shadow-sm">
+                                <div class="flex items-center space-x-2">
+                                    <span class="px-1.5 py-0.5 bg-slate-800 text-amber-400 font-extrabold text-[10px] rounded">
+                                        #${idx + 1}
+                                    </span>
+                                    <span class="px-2 py-1 text-[10px] sm:text-[11px] rounded-lg border shadow-sm ${zoneBadgeClass} whitespace-nowrap">
+                                        ${item.tableName}
+                                    </span>
+                                    <div>
+                                        <div class="text-xs font-bold text-slate-800">
+                                            대기 <span class="text-rose-600 font-extrabold text-sm">${item.pendingCount}</span> / 총 ${item.totalQty}개
+                                        </div>
+                                        <div class="text-[10px] text-slate-400">주문시각: ${item.orderTime}</div>
+                                    </div>
+                                </div>
+                                <button onclick="completeKitchenItem('${item.tableId}', '${item.orderId}', ${item.firstPendingIdx})" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs rounded-lg transition shadow-sm whitespace-nowrap">
+                                    ✓ 픽업대기
+                                </button>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                menuCard.innerHTML = `
+                    <div class="${categoryBadge} px-3.5 py-2.5 text-white flex justify-between items-center">
+                        <h3 class="font-bold text-xs sm:text-sm truncate">${menu.name}</h3>
+                        <span class="text-[11px] bg-white/20 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">대기 ${queueItems.reduce((acc, cur) => acc + cur.pendingCount, 0)}개</span>
+                    </div>
+                    <div class="p-3 space-y-2 flex-grow max-h-64 sm:max-h-80 overflow-y-auto">
+                        ${itemsHtml}
+                    </div>
+                `;
+
+                container.appendChild(menuCard);
+            });
+        };
+
+        // 주방에서 [✓ 픽업대기] 버튼 터치 시 호출 -> "띵동" 소리 5회 발생 후 상태를 PICKUP으로 전환
+        window.completeKitchenItem = function(tableId, orderId, qtyIndex) {
+            playPickupSound(); // 소리 5회 재생
+            setItemStatus(tableId, orderId, qtyIndex, 'PICKUP');
+        };
+
+        window.handleAddTable = function() {
+            const input = document.getElementById('new-table-name');
+            const zoneSelect = document.getElementById('new-table-zone');
+            const name = input.value.trim();
+            if (!name) {
+                showMessage('입력 오류', '테이블 번호 또는 이름을 입력해주세요.');
+                return;
+            }
+
+            const newTable = {
+                id: 't_' + Date.now(),
+                name: name,
+                zone: zoneSelect.value, 
+                status: '이용',
+                groupId: null,
+                pickupStatus: 'NONE',
+                orders: []
+            };
+
+            state.tables.push(newTable);
+            saveToStorage();
+            input.value = '';
+        };
+
+        window.handleDeleteTable = function(tableId, event) {
+            if (event) event.stopPropagation();
+
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            if (confirm(`'${table.name}'을(를) 삭제하시겠습니까?`)) {
+                state.tables = state.tables.filter(t => t.id !== tableId);
+                state.selectedTableIdsForMerge = state.selectedTableIdsForMerge.filter(id => id !== tableId);
+                if (state.selectedTableId === tableId) {
+                    state.selectedTableId = state.tables.length > 0 ? state.tables[0].id : null;
+                }
+                saveToStorage();
+                showMessage('삭제 완료', `${table.name}이(가) 삭제되었습니다.`);
+            }
+        };
+
+        window.setZoneFilter = function(zoneKey) {
+            state.selectedZoneFilter = zoneKey;
+            ['ALL', 'H', 'T'].forEach(z => {
+                const btn = document.getElementById(`btn-zone-${z}`);
+                if (btn) {
+                    if (z === zoneKey) {
+                        btn.className = z === 'H' 
+                            ? "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition bg-amber-500 text-white shadow-sm whitespace-nowrap"
+                            : z === 'T' 
+                            ? "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition bg-blue-600 text-white shadow-sm whitespace-nowrap"
+                            : "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition bg-white text-indigo-600 shadow-sm whitespace-nowrap";
+                    } else {
+                        btn.className = z === 'H'
+                            ? "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition text-amber-700 hover:bg-amber-100 whitespace-nowrap"
+                            : z === 'T'
+                            ? "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition text-blue-700 hover:bg-blue-100 whitespace-nowrap"
+                            : "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition text-slate-600 hover:text-slate-900 whitespace-nowrap";
+                    }
+                }
+            });
+            renderTables();
+        };
+
+        window.setOrderCategoryFilter = function(catKey) {
+            state.selectedCategoryFilter = catKey;
+            renderTableDetail();
+        };
+
+        window.selectTable = function(tableId) {
+            state.selectedTableId = tableId;
+            renderTables();
+        };
+
+        window.toggleTableSelectionForMerge = function(tableId, event) {
+            event.stopPropagation();
+            const index = state.selectedTableIdsForMerge.indexOf(tableId);
+            if (index > -1) state.selectedTableIdsForMerge.splice(index, 1);
+            else state.selectedTableIdsForMerge.push(tableId);
+            renderTables();
+        };
+
+        window.toggleTableStatus = function(tableId, event) {
+            event.stopPropagation();
+            const table = state.tables.find(t => t.id === tableId);
+            if (table) {
+                table.status = table.status === '이용' ? '비이용' : '이용';
+                saveToStorage();
+            }
+        };
+
+        window.handleMergeTables = function() {
+            if (state.selectedTableIdsForMerge.length < 2) {
+                showMessage('선택 부족', '합석할 테이블을 2개 이상 선택해주세요.');
+                return;
+            }
+            const groupName = document.getElementById('group-name-input').value.trim() || ('합석-' + Date.now().toString().slice(-4));
+            
+            state.tables.forEach(t => {
+                if (state.selectedTableIdsForMerge.includes(t.id)) {
+                    t.groupId = groupName;
+                }
+            });
+
+            state.selectedTableIdsForMerge = [];
+            document.getElementById('group-name-input').value = '';
+            saveToStorage();
+            showMessage('합석 완료', `선택한 테이블이 [${groupName}] 그룹으로 통합되었습니다.`);
+        };
+
+        window.handleUnmergeTables = function() {
+            const table = state.tables.find(t => t.id === state.selectedTableId);
+            if (!table || !table.groupId) {
+                showMessage('안내', '현재 선택된 테이블이 합석 상태가 아닙니다.');
+                return;
+            }
+            const targetGroupId = table.groupId;
+            state.tables.forEach(t => {
+                if (t.groupId === targetGroupId) t.groupId = null;
+            });
+            saveToStorage();
+            showMessage('해제 완료', '해당 그룹의 합석이 해제되었습니다.');
+        };
+
+        window.handleAddOrderToTable = function(tableId, menuId) {
+            const table = state.tables.find(t => t.id === tableId);
+            const menu = state.menus.find(m => m.id === menuId);
+            if (!table || !menu) return;
+
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const timeStamp = now.getTime();
+
+            const existingOrder = table.orders.find(o => o.menuId === menuId);
+            if (existingOrder) {
+                existingOrder.qty += 1;
+                if (!existingOrder.itemStatuses) existingOrder.itemStatuses = [];
+                existingOrder.itemStatuses.push('PENDING');
+            } else {
+                table.orders.push({
+                    orderId: 'ord_' + Date.now() + Math.random().toString(36).substr(2, 4),
+                    menuId: menu.id,
+                    menuName: menu.name,
+                    category: menu.category,
+                    price: menu.price,
+                    qty: 1,
+                    itemStatuses: ['PENDING'],
+                    orderTime: timeStr,
+                    timestamp: timeStamp
+                });
+            }
+            table.status = '이용';
+            
+            updateTablePickupStatus(table);
+            saveToStorage();
+        };
+
+        window.handleDecreaseOrderQty = function(tableId, orderId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            const order = table.orders.find(o => o.orderId === orderId);
+            if (!order) return;
+
+            if (order.qty > 1) {
+                order.qty -= 1;
+                if (order.itemStatuses) order.itemStatuses.pop();
+            } else {
+                table.orders = table.orders.filter(o => o.orderId !== orderId);
+            }
+            updateTablePickupStatus(table);
+            saveToStorage();
+        };
+
+        // 개별 메뉴 항목 상태 변경
+        window.setItemStatus = function(tableId, orderId, qtyIndex, newStatus) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+            const order = table.orders.find(o => o.orderId === orderId);
+            if (order && order.itemStatuses && order.itemStatuses[qtyIndex] !== undefined) {
+                order.itemStatuses[qtyIndex] = newStatus;
+                
+                if (newStatus === 'PICKUP') {
+                    playPickupSound(); // 소리 5회 재생
+                }
+
+                updateTablePickupStatus(table);
+                saveToStorage();
+            }
+        };
+
+        function updateTablePickupStatus(table) {
+            let allItems = [];
+            table.orders.forEach(o => {
+                if (o.itemStatuses) allItems.push(...o.itemStatuses);
+            });
+
+            if (allItems.length === 0) {
+                table.pickupStatus = 'NONE';
+                return;
+            }
+
+            const hasPickup = allItems.includes('PICKUP');
+            const allCompleted = allItems.every(s => s === 'COMPLETED');
+
+            if (hasPickup) {
+                table.pickupStatus = 'WAITING';
+            } else if (allCompleted) {
+                table.pickupStatus = 'COMPLETED';
+            } else {
+                table.pickupStatus = 'NONE';
+            }
+        }
+
+        window.toggleItemCheck = function(tableId, orderId, index) {
+            const key = `${tableId}_${orderId}_${index}`;
+            state.checkedItems[key] = !state.checkedItems[key];
+            renderTableDetail();
+            renderPickupBoard();
+        };
+
+        window.handleCheckedItemsPickup = function(tableId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            let updatedCount = 0;
+            table.orders.forEach(order => {
+                (order.itemStatuses || []).forEach((status, idx) => {
+                    const key = `${tableId}_${order.orderId}_${idx}`;
+                    if (state.checkedItems[key] && status === 'PENDING') {
+                        order.itemStatuses[idx] = 'PICKUP';
+                        state.checkedItems[key] = false;
+                        updatedCount++;
+                    }
+                });
+            });
+
+            if (updatedCount > 0) {
+                playPickupSound(); // 소리 5회 재생
+                updateTablePickupStatus(table);
+                saveToStorage();
+                showMessage('픽업 등록 완료', `${updatedCount}개 항목이 픽업 대기 상태로 변경되었습니다.`);
+            } else {
+                showMessage('알림', '픽업으로 전환할 항목을 체크해주세요 (대기 상태만 가능).');
+            }
+        };
+
+        window.handleCheckedItemsComplete = function(tableId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            let updatedCount = 0;
+            table.orders.forEach(order => {
+                (order.itemStatuses || []).forEach((status, idx) => {
+                    const key = `${tableId}_${order.orderId}_${idx}`;
+                    if (state.checkedItems[key] && status !== 'COMPLETED') {
+                        order.itemStatuses[idx] = 'COMPLETED';
+                        state.checkedItems[key] = false;
+                        updatedCount++;
+                    }
+                });
+            });
+
+            if (updatedCount > 0) {
+                updateTablePickupStatus(table);
+                saveToStorage();
+                showMessage('종료 완료', `${updatedCount}개 항목이 완료(종료) 처리되었습니다.`);
+            } else {
+                showMessage('알림', '종료 처리할 항목을 체크해주세요.');
+            }
+        };
+
+        window.handleCheckoutTable = function(tableId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            if (table.orders.length === 0) {
+                showMessage('안내', '주문 내역이 없어 퇴장 처리를 할 수 없습니다.');
+                return;
+            }
+
+            if (!confirm(`'${table.name}'의 주문 금액을 결제 및 매출에 누적하고 퇴장 처리하시겠습니까?`)) return;
+
+            let checkoutTables = [table];
+            if (table.groupId) {
+                checkoutTables = state.tables.filter(t => t.groupId === table.groupId);
+            }
+
+            checkoutTables.forEach(t => {
+                t.orders.forEach(o => {
+                    state.accumulatedSales.push({
+                        menuId: o.menuId,
+                        menuName: o.menuName,
+                        category: o.category,
+                        price: o.price,
+                        qty: o.qty,
+                        checkoutTime: new Date().toISOString()
+                    });
+                });
+                t.orders = [];
+                t.status = '비이용';
+                t.groupId = null;
+                t.pickupStatus = 'NONE';
+            });
+
+            saveToStorage();
+            showMessage('퇴장 완료', '주문 금액이 누적 매출에 반영되고 테이블이 비어졌습니다.');
+        };
+
+        window.handleClearTable = function(tableId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            if (!confirm(`매출에 반영하지 않고 '${table.name}'의 주문 내역을 강제로 비우시겠습니까?`)) return;
+
+            table.orders = [];
+            table.status = '비이용';
+            table.groupId = null;
+            table.pickupStatus = 'NONE';
+            saveToStorage();
+            showMessage('강제 비우기 완료', '해당 테이블이 초기화되었습니다.');
+        };
+
+        window.handleResetAccumulatedSales = function() {
+            if (confirm('전체 누적 매출 데이터를 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+                state.accumulatedSales = [];
+                saveToStorage();
+                showMessage('초기화 완료', '누적 매출 기록이 완전히 초기화되었습니다.');
+            }
+        };
+
+        window.renderTables = function() {
+            const container = document.getElementById('table-grid-container');
+            container.innerHTML = '';
+
+            let filteredTables = state.tables;
+            if (state.selectedZoneFilter !== 'ALL') {
+                filteredTables = state.tables.filter(t => t.zone === state.selectedZoneFilter);
+            }
+
+            if (filteredTables.length === 0) {
+                container.innerHTML = `<p class="col-span-full text-xs text-slate-400 text-center py-8">등록된 테이블이 없습니다.</p>`;
+            }
+
+            filteredTables.forEach(table => {
+                const isSelected = table.id === state.selectedTableId;
+                const isCheckedForMerge = state.selectedTableIdsForMerge.includes(table.id);
+                
+                let zoneBorderColor = table.zone === 'H' 
+                    ? 'border-l-4 border-l-amber-500 border-slate-200' 
+                    : 'border-l-4 border-l-blue-600 border-slate-200';
+                
+                let zoneBadgeStyle = table.zone === 'H' 
+                    ? 'bg-amber-500 text-white font-extrabold' 
+                    : 'bg-blue-600 text-white font-extrabold';
+                
+                let zoneLabel = table.zone === 'H' ? 'H홀' : 'T데크';
+
+                let totalAmount = table.orders.reduce((sum, o) => sum + (o.price * o.qty), 0);
+                if (table.groupId) {
+                    const groupTables = state.tables.filter(t => t.groupId === table.groupId);
+                    totalAmount = groupTables.reduce((gSum, gt) => gSum + gt.orders.reduce((os, o) => os + (o.price * o.qty), 0), 0);
+                }
+
+                let pickupBadgeHtml = '';
+                if (table.pickupStatus === 'WAITING') {
+                    pickupBadgeHtml = '<span class="text-[9px] bg-rose-500 text-white font-bold px-1.5 py-0.5 rounded animate-pulse">픽업대기</span>';
+                } else if (table.pickupStatus === 'COMPLETED') {
+                    pickupBadgeHtml = '<span class="text-[9px] bg-slate-600 text-white font-bold px-1.5 py-0.5 rounded">전체종료</span>';
+                }
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl bg-white transition cursor-pointer border ${zoneBorderColor} ${isSelected ? 'ring-2 ring-indigo-500 shadow-sm' : 'hover:border-slate-300'}`;
+                card.onclick = () => selectTable(table.id);
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-1">
+                        <div class="flex items-center space-x-1.5 truncate">
+                            <input type="checkbox" ${isCheckedForMerge ? 'checked' : ''} onclick="toggleTableSelectionForMerge('${table.id}', event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer flex-shrink-0" title="합석 선택">
+                            <h4 class="font-bold text-slate-800 text-xs sm:text-sm truncate flex items-center gap-1">
+                                ${table.name} 
+                                <span class="text-[9px] px-1.5 py-0.2 rounded whitespace-nowrap ${zoneBadgeStyle}">${zoneLabel}</span>
+                            </h4>
+                        </div>
+                        <button onclick="handleDeleteTable('${table.id}', event)" class="p-0.5 text-slate-300 hover:text-rose-600 rounded transition flex-shrink-0" title="테이블 삭제">
+                            🗑️
+                        </button>
+                    </div>
+                    <div class="mt-2 flex justify-between items-center text-[11px] sm:text-xs">
+                        <div class="flex items-center gap-1">
+                            <button onclick="toggleTableStatus('${table.id}', event)" class="px-1.5 py-0.5 text-[10px] rounded font-medium ${table.status === '이용' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
+                                ${table.status}
+                            </button>
+                            ${pickupBadgeHtml}
+                        </div>
+                        <span class="font-bold text-indigo-600">${totalAmount.toLocaleString()}원</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            renderTableDetail();
+        };
+
+        window.renderTableDetail = function() {
+            const panel = document.getElementById('table-detail-panel');
+            const table = state.tables.find(t => t.id === state.selectedTableId);
+
+            if (!table) {
+                panel.innerHTML = `
+                    <div class="text-center py-16 sm:py-24 text-slate-400">
+                        <span class="text-3xl sm:text-4xl block mb-2">🛎</span>
+                        <p class="text-xs sm:text-sm font-medium">관리할 테이블을 선택해주세요.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let displayOrders = [...table.orders];
+            let groupTitleInfo = table.name;
+            let totalAmount = table.orders.reduce((sum, o) => sum + (o.price * o.qty), 0);
+
+            if (table.groupId) {
+                const groupTables = state.tables.filter(t => t.groupId === table.groupId);
+                groupTitleInfo = `${table.name} (${table.groupId})`;
+                displayOrders = [];
+                groupTables.forEach(gt => {
+                    gt.orders.forEach(ord => {
+                        displayOrders.push({ ...ord, originTableName: gt.name, originTableId: gt.id });
+                    });
+                });
+                totalAmount = displayOrders.reduce((sum, o) => sum + (o.price * o.qty), 0);
+            }
+
+            let filteredMenus = state.menus;
+            if (state.selectedCategoryFilter !== 'ALL') {
+                filteredMenus = state.menus.filter(m => m.category === state.selectedCategoryFilter);
+            }
+
+            let menuButtonsHtml = filteredMenus.map(m => `
+                <button onclick="handleAddOrderToTable('${table.id}', '${m.id}')" class="p-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl text-left transition flex flex-col justify-between active:scale-95 touch-btn">
+                    <span class="font-medium text-xs text-slate-800 truncate">${m.name}</span>
+                    <span class="text-[10px] font-bold text-indigo-600 mt-0.5">+ ${m.price.toLocaleString()}원</span>
+                </button>
+            `).join('');
+
+            let orderListHtml = '';
+            if (displayOrders.length === 0) {
+                orderListHtml = `<tr><td colspan="4" class="py-6 text-center text-slate-400 text-xs">주문 내역이 없습니다.</td></tr>`;
+            } else {
+                displayOrders.forEach(order => {
+                    let qtyButtonsHtml = '';
+                    const tId = order.originTableId || table.id;
+
+                    for (let i = 0; i < order.qty; i++) {
+                        const currentStatus = (order.itemStatuses && order.itemStatuses[i]) ? order.itemStatuses[i] : 'PENDING';
+                        const checkKey = `${tId}_${order.orderId}_${i}`;
+                        const isChecked = !!state.checkedItems[checkKey];
+
+                        let statusBadge = '';
+                        if (currentStatus === 'PENDING') {
+                            statusBadge = '<span class="text-[9px] bg-slate-200 text-slate-700 px-1 py-0.5 rounded font-bold">대기</span>';
+                        } else if (currentStatus === 'PICKUP') {
+                            statusBadge = '<span class="text-[9px] bg-amber-500 text-white px-1 py-0.5 rounded font-bold">픽업</span>';
+                        } else if (currentStatus === 'COMPLETED') {
+                            statusBadge = '<span class="text-[9px] bg-slate-600 text-white px-1 py-0.5 rounded font-bold">종료</span>';
+                        }
+                        
+                        qtyButtonsHtml += `
+                            <div class="inline-flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200 shadow-sm text-[10px] gap-1">
+                                <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleItemCheck('${tId}', '${order.orderId}', ${i})" class="w-3.5 h-3.5 rounded text-indigo-600 cursor-pointer">
+                                <span class="font-bold text-slate-600">#${i+1}</span>
+                                ${statusBadge}
+                                <button onclick="setItemStatus('${tId}', '${order.orderId}', ${i}, 'PICKUP')" 
+                                        class="px-1.5 py-0.5 rounded font-bold transition ${currentStatus === 'PICKUP' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600 hover:text-amber-600 bg-white border border-slate-200'}">
+                                    픽업
+                                </button>
+                                <button onclick="setItemStatus('${tId}', '${order.orderId}', ${i}, 'COMPLETED')" 
+                                        class="px-1.5 py-0.5 rounded font-bold transition ${currentStatus === 'COMPLETED' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:text-emerald-600 bg-white border border-slate-200'}">
+                                    종료
+                                </button>
+                            </div>
+                        `;
+                    }
+
+                    const originId = order.originTableId || table.id;
+
+                    orderListHtml += `
+                        <tr class="hover:bg-slate-50 transition text-xs sm:text-sm">
+                            <td class="py-2.5 px-2 font-medium text-slate-800">
+                                ${order.menuName}
+                                ${order.originTableName ? `<span class="text-[9px] text-indigo-600 block">[${order.originTableName}]</span>` : ''}
+                            </td>
+                            <td class="py-2.5 px-2 text-slate-600">
+                                <div class="flex items-center space-x-1">
+                                    <button onclick="handleDecreaseOrderQty('${originId}', '${order.orderId}')" class="w-5 h-5 bg-slate-200 hover:bg-rose-100 hover:text-rose-600 rounded flex items-center justify-center font-bold text-xs">-</button>
+                                    <span class="font-bold px-1 text-xs">${order.qty}</span>
+                                    <button onclick="handleAddOrderToTable('${originId}', '${order.menuId}')" class="w-5 h-5 bg-slate-200 hover:bg-indigo-100 hover:text-indigo-600 rounded flex items-center justify-center font-bold text-xs">+</button>
+                                </div>
+                            </td>
+                            <td class="py-2.5 px-2 font-semibold text-slate-800 text-xs whitespace-nowrap">${(order.price * order.qty).toLocaleString()}원</td>
+                            <td class="py-2.5 px-2 text-right">
+                                <div class="flex flex-wrap gap-1.5 justify-end">
+                                    ${qtyButtonsHtml}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            const getCatBtnClass = (cat) => {
+                return state.selectedCategoryFilter === cat 
+                    ? "px-2.5 py-1 text-xs font-bold rounded-lg bg-indigo-600 text-white shadow-sm whitespace-nowrap"
+                    : "px-2.5 py-1 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-100 whitespace-nowrap";
+            };
+
+            panel.innerHTML = `
+                <div>
+                    <!-- Header -->
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-3 border-b border-slate-100 mb-3 gap-2">
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-sm sm:text-base font-bold text-slate-800">${groupTitleInfo}</h3>
+                            <button onclick="handleDeleteTable('${table.id}')" class="text-[10px] text-rose-500 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded border border-rose-200 transition font-medium">
+                                🗑️ 테이블 삭제
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="handleCheckoutTable('${table.id}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-sm transition whitespace-nowrap">
+                                🚪 손님 퇴장 (매출 누적)
+                            </button>
+                            <button onclick="handleClearTable('${table.id}')" class="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold transition whitespace-nowrap" title="매출 누적 없이 강제 삭제">
+                                🧹 강제 비우기
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Checkbox Controls -->
+                    <div class="bg-indigo-50/70 border border-indigo-100 p-3 rounded-xl mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div class="text-xs text-indigo-900 font-medium">
+                            ☑️ <b>체크 항목 제어:</b> 체크박스 선택 후 일괄 변경
+                        </div>
+                        <div class="flex items-center space-x-2 w-full sm:w-auto">
+                            <button onclick="handleCheckedItemsPickup('${table.id}')" class="flex-1 sm:flex-none px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition shadow-sm whitespace-nowrap">
+                                🔔 선택 항목 픽업
+                            </button>
+                            <button onclick="handleCheckedItemsComplete('${table.id}')" class="flex-1 sm:flex-none px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition shadow-sm whitespace-nowrap">
+                                ✓ 선택 항목 종료
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <h4 class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">주문 내역 및 체크박스 상태 제어</h4>
+                            <span class="text-[10px] text-amber-600 font-semibold">종료된 메뉴는 픽업창에서 자동 제외</span>
+                        </div>
+                        <div class="max-h-56 overflow-y-auto border border-slate-100 rounded-xl">
+                            <table class="w-full text-left">
+                                <tbody class="divide-y divide-slate-100">
+                                    ${orderListHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 gap-2">
+                            <h4 class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">메뉴 추가</h4>
+                            <div class="flex bg-slate-100 p-0.5 rounded-lg space-x-0.5 overflow-x-auto w-full sm:w-auto no-scrollbar">
+                                <button onclick="setOrderCategoryFilter('ALL')" class="${getCatBtnClass('ALL')}">전체</button>
+                                <button onclick="setOrderCategoryFilter('메인요리')" class="${getCatBtnClass('메인요리')}">메인</button>
+                                <button onclick="setOrderCategoryFilter('서브요리')" class="${getCatBtnClass('서브요리')}">서브</button>
+                                <button onclick="setOrderCategoryFilter('주류/음료')" class="${getCatBtnClass('주류/음료')}">주류</button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-36 overflow-y-auto pr-0.5">
+                            ${menuButtonsHtml || '<p class="text-xs text-slate-400 col-span-full py-3 text-center">등록된 메뉴가 없습니다.</p>'}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                    <span class="text-xs sm:text-sm font-bold text-slate-700">현재 총 결제 예정 금액</span>
+                    <span class="text-base sm:text-lg font-bold text-indigo-600">${totalAmount.toLocaleString()} 원</span>
+                </div>
+            `;
+        };
+
+        // 픽업 전광판: 'PICKUP'(픽업대기) 상태 항목 표출 & 수동 [✓ 픽업 완료] 처리
+        window.renderPickupBoard = function() {
+            const readyContainer = document.getElementById('ready-pickup-grid');
+            const completedContainer = document.getElementById('completed-pickup-grid');
+            const readyBadge = document.getElementById('ready-pickup-count-badge');
+            const completedBadge = document.getElementById('completed-pickup-count-badge');
+
+            readyContainer.innerHTML = '';
+            completedContainer.innerHTML = '';
+
+            const readyTables = [];
+            const completedTables = [];
+
+            state.tables.forEach(table => {
+                const activePickupItems = [];
+                const completedItems = [];
+
+                (table.orders || []).forEach(order => {
+                    (order.itemStatuses || []).forEach((status, idx) => {
+                        if (status === 'PICKUP') {
+                            activePickupItems.push({
+                                orderId: order.orderId,
+                                menuName: order.menuName,
+                                index: idx
+                            });
+                        } else if (status === 'COMPLETED') {
+                            completedItems.push({
+                                orderId: order.orderId,
+                                menuName: order.menuName,
+                                index: idx
+                            });
+                        }
+                    });
+                });
+
+                if (activePickupItems.length > 0) {
+                    readyTables.push({
+                        table: table,
+                        pickupItems: activePickupItems
+                    });
+                }
+
+                if (completedItems.length > 0 && !state.hideCompletedPickups) {
+                    completedTables.push({
+                        table: table,
+                        completedItems: completedItems
+                    });
+                }
+            });
+
+            readyBadge.innerText = readyTables.length;
+            completedBadge.innerText = completedTables.length;
+
+            if (readyTables.length === 0) {
+                readyContainer.innerHTML = `
+                    <div class="col-span-full bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center text-slate-400">
+                        <span class="text-4xl block mb-2">🍽️</span>
+                        <p class="text-sm font-medium">현재 픽업 대기(전광판 표출) 중인 메뉴가 없습니다.</p>
+                        <p class="text-xs text-slate-400 mt-1">주방에서 [✓ 픽업대기]를 누르면 여기에 표출되며 알림 소리가 울립니다.</p>
+                    </div>
+                `;
+            } else {
+                readyTables.forEach(item => {
+                    const table = item.table;
+                    const items = item.pickupItems;
+
+                    const itemCounts = {};
+                    items.forEach(i => {
+                        itemCounts[i.menuName] = (itemCounts[i.menuName] || 0) + 1;
+                    });
+                    const itemListStr = Object.entries(itemCounts).map(([name, count]) => `${name} x${count}`).join(', ');
+
+                    let zoneBadgeText = table.zone === 'H' ? 'H홀 (오렌지)' : 'T데크 (블루)';
+                    let zoneBadgeColor = table.zone === 'H' ? 'bg-amber-500 text-white font-extrabold' : 'bg-blue-600 text-white font-extrabold';
+
+                    const card = document.createElement('div');
+                    card.className = "bg-white rounded-2xl border-2 p-5 flex flex-col justify-between pickup-blink transition transform hover:scale-[1.02] shadow-lg";
+
+                    card.innerHTML = `
+                        <div>
+                            <div class="flex justify-between items-center mb-3">
+                                <span class="px-2.5 py-1 text-xs font-bold rounded-lg shadow-sm ${zoneBadgeColor}">
+                                    ${zoneBadgeText}
+                                </span>
+                                <span class="text-xs font-extrabold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full animate-pulse">
+                                    픽업 준비 완료!
+                                </span>
+                            </div>
+                            <div class="text-center py-2">
+                                <h3 class="text-3xl font-black text-slate-900 tracking-tight">${table.name}</h3>
+                                <p class="text-xs font-semibold text-slate-500 mt-1">총 ${items.length}개 메뉴 수령 가능</p>
+                            </div>
+                            <div class="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-slate-800 font-bold" title="${itemListStr}">
+                                🔔 ${itemListStr}
+                            </div>
+                        </div>
+                        <button onclick="completeActivePickupForTable('${table.id}')" class="mt-5 w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black py-3 rounded-xl text-sm transition shadow-md touch-btn flex items-center justify-center gap-1.5">
+                            ✓ 픽업 완료 (종료 처리)
+                        </button>
+                    `;
+                    readyContainer.appendChild(card);
+                });
+            }
+
+            if (completedTables.length === 0 || state.hideCompletedPickups) {
+                completedContainer.innerHTML = `
+                    <div class="col-span-full py-6 text-center text-xs text-slate-400">
+                        ${state.hideCompletedPickups ? '종료 목록이 숨겨져 있습니다.' : '종료된 내역이 없습니다.'}
+                    </div>
+                `;
+            } else {
+                completedTables.forEach(item => {
+                    const table = item.table;
+                    let zoneTagColor = table.zone === 'H' ? 'text-amber-600 font-bold' : 'text-blue-600 font-bold';
+
+                    const card = document.createElement('div');
+                    card.className = "bg-slate-100 border border-slate-200 rounded-xl p-3 text-center transition hover:bg-slate-200/70";
+                    card.innerHTML = `
+                        <span class="text-[10px] ${zoneTagColor} block">${table.zone === 'H' ? 'H홀' : 'T데크'}</span>
+                        <h4 class="font-bold text-slate-700 text-sm sm:text-base">${table.name}</h4>
+                        <span class="text-[10px] text-slate-400 block">${item.completedItems.length}개 종료됨</span>
+                    `;
+                    completedContainer.appendChild(card);
+                });
+            }
+        };
+
+        window.completeActivePickupForTable = function(tableId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+
+            let count = 0;
+            table.orders.forEach(order => {
+                (order.itemStatuses || []).forEach((status, idx) => {
+                    if (status === 'PICKUP') {
+                        order.itemStatuses[idx] = 'COMPLETED';
+                        count++;
+                    }
+                });
+            });
+
+            updateTablePickupStatus(table);
+            saveToStorage();
+            showMessage('픽업 완료', `${table.name}의 ${count}개 메뉴가 완료(종료) 처리되었습니다.`);
+        };
+
+        window.toggleCompletedPickupsView = function() {
+            state.hideCompletedPickups = !state.hideCompletedPickups;
+            const sec = document.getElementById('completed-pickups-section');
+            const btn = document.getElementById('btn-toggle-completed');
+
+            if (state.hideCompletedPickups) {
+                sec.classList.add('hidden');
+                btn.innerHTML = '👁 종료 목록 보이기';
+            } else {
+                sec.classList.remove('hidden');
+                btn.innerHTML = '👁️ 종료 목록 가리기';
+            }
+            renderPickupBoard();
+        };
+
+        window.updateSalesStats = function() {
+            let totalRevenue = 0;
+            let totalQty = 0;
+            let activeTablesCount = 0;
+
+            state.tables.forEach(table => {
+                if (table.status === '이용' && table.orders.length > 0) activeTablesCount++;
+                table.orders.forEach(o => {
+                    totalRevenue += o.price * o.qty;
+                    totalQty += o.qty;
+                });
+            });
+
+            (state.accumulatedSales || []).forEach(o => {
+                totalRevenue += o.price * o.qty;
+                totalQty += o.qty;
+            });
+
+            document.getElementById('stat-total-revenue').innerText = totalRevenue.toLocaleString() + ' 원';
+            document.getElementById('stat-total-qty').innerText = totalQty.toLocaleString() + ' 개';
+            document.getElementById('stat-active-tables').innerText = activeTablesCount + ' 개';
+        };
+
+        window.renderSalesChart = function() {
+            updateSalesStats();
+
+            const salesMap = {};
+            state.menus.forEach(m => {
+                salesMap[m.name] = { count: 0, category: m.category };
+            });
+
+            state.tables.forEach(table => {
+                table.orders.forEach(o => {
+                    if (salesMap[o.menuName]) {
+                        salesMap[o.menuName].count += o.qty;
+                    } else {
+                        salesMap[o.menuName] = { count: o.qty, category: o.category || '메인요리' };
+                    }
+                });
+            });
+
+            (state.accumulatedSales || []).forEach(o => {
+                if (salesMap[o.menuName]) {
+                    salesMap[o.menuName].count += o.qty;
+                } else {
+                    salesMap[o.menuName] = { count: o.qty, category: o.category || '메인요리' };
+                }
+            });
+
+            const chartData = Object.keys(salesMap).map(key => ({
+                name: key,
+                count: salesMap[key].count,
+                category: salesMap[key].category
+            }));
+
+            const container = document.getElementById('chart-container');
+            container.innerHTML = '';
+
+            if (chartData.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400">표시할 판매 데이터가 없습니다.</p>`;
+                return;
+            }
+
+            const margin = { top: 20, right: 15, bottom: 50, left: 35 };
+            const width = container.clientWidth || 320;
+            const height = container.clientHeight || 260;
+            const innerWidth = width - margin.left - margin.right;
+            const innerHeight = height - margin.top - margin.bottom;
+
+            const svg = d3.select("#chart-container")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleBand()
+                .range([0, innerWidth])
+                .domain(chartData.map(d => d.name))
+                .padding(0.3);
+
+            svg.append("g")
+                .attr("transform", `translate(0,${innerHeight})`)
+                .call(d3.axisBottom(x))
+                .selectAll("text")
+                .attr("transform", "translate(-8,0)rotate(-25)")
+                .style("text-anchor", "end")
+                .style("font-size", "10px")
+                .style("fill", "#64748b");
+
+            const maxCount = d3.max(chartData, d => d.count) || 5;
+            const y = d3.scaleLinear()
+                .domain([0, maxCount + 2])
+                .range([innerHeight, 0]);
+
+            svg.append("g")
+                .call(d3.axisLeft(y).ticks(5))
+                .style("font-size", "10px")
+                .style("color", "#64748b");
+
+            const tooltip = d3.select("body").append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            const colorMap = {
+                '메인요리': '#4f46e5',
+                '서브요리': '#10b981',
+                '주류/음료': '#f59e0b'
+            };
+
+            svg.selectAll("mybar")
+                .data(chartData)
+                .enter()
+                .append("rect")
+                .attr("x", d => x(d.name))
+                .attr("y", d => y(d.count))
+                .attr("width", x.bandwidth())
+                .attr("height", d => innerHeight - y(d.count))
+                .attr("fill", d => colorMap[d.category] || '#6366f1')
+                .attr("rx", 4)
+                .on("mouseover touchstart", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", .95);
+                    tooltip.html(`<b>${d.name}</b><br/>판매: <b>${d.count}개</b>`)
+                        .style("left", (event.pageX || (event.touches && event.touches[0].pageX)) + "px")
+                        .style("top", ((event.pageY || (event.touches && event.touches[0].pageY)) - 40) + "px");
+                })
+                .on("mouseout touchend", () => {
+                    tooltip.transition().duration(300).style("opacity", 0);
+                });
+        };
+
+        window.addEventListener('resize', () => {
+            if (!document.getElementById('tab-sales').classList.contains('hidden')) {
+                renderSalesChart();
+            }
+        });
+    </script>
+</body>
+</html>
